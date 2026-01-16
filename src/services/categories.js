@@ -10,7 +10,7 @@ export const categories = {
     { id: 6, name: "Reembolso", icon: "↪️", color: "#8b5cf6", emoji: "💸" },
     { id: 7, name: "Outros", icon: "📄", color: "#94a3b8", emoji: "📝" },
   ],
-  
+
   // DESPESAS (typeId: 2)
   expense: [
     { id: 101, name: "Alimentação", icon: "🍕", color: "#ef4444", emoji: "🍔" },
@@ -24,10 +24,16 @@ export const categories = {
     { id: 109, name: "Assinaturas", icon: "📱", color: "#5b21b6", emoji: "📺" },
     { id: 110, name: "Outros", icon: "📄", color: "#94a3b8", emoji: "📝" },
   ],
-  
+
   // INVESTIMENTOS (typeId: 3)
   investment: [
-    { id: 201, name: "Tesouro Direto", icon: "🏦", color: "#3b82f6", emoji: "🇧🇷" },
+    {
+      id: 201,
+      name: "Tesouro Direto",
+      icon: "🏦",
+      color: "#3b82f6",
+      emoji: "🇧🇷",
+    },
     { id: 202, name: "CDB", icon: "📊", color: "#2563eb", emoji: "🏛️" },
     { id: 203, name: "Ações", icon: "📈", color: "#1d4ed8", emoji: "💹" },
     { id: 204, name: "FIIs", icon: "🏢", color: "#1e40af", emoji: "🏘️" },
@@ -39,23 +45,61 @@ export const categories = {
 };
 
 // Funções utilitárias
+// services/categories.js - ADICIONE
 export const getCategoriesByType = (typeId) => {
+  console.log(`🔍 Buscando categorias para typeId: ${typeId}`);
+
   switch (typeId) {
-    case 1: return categories.income;
-    case 2: return categories.expense;
-    case 3: return categories.investment;
-    default: return [];
+    case 1:
+      console.log(
+        "📊 Categorias de Receita:",
+        categories.income.map((c) => `${c.id}: ${c.name}`)
+      );
+      return categories.income;
+    case 2:
+      console.log(
+        "📊 Categorias de Despesa:",
+        categories.expense.map((c) => `${c.id}: ${c.name}`)
+      );
+      return categories.expense;
+    case 3:
+      console.log(
+        "📊 Categorias de Investimento:",
+        categories.investment.map((c) => `${c.id}: ${c.name}`)
+      );
+      return categories.investment;
+    default:
+      console.log("⚠️ TypeId inválido, retornando array vazio");
+      return [];
   }
 };
-
 export const getCategoryById = (id) => {
   // Busca em todas as categorias
-  const allCategories = [...categories.income, ...categories.expense, ...categories.investment];
-  return allCategories.find(cat => cat.id === id) || 
-    { id: 0, name: "Não categorizado", icon: "❓", color: "#94a3b8", emoji: "❓" };
+  const allCategories = [
+    ...categories.income,
+    ...categories.expense,
+    ...categories.investment,
+  ];
+  return (
+    allCategories.find((cat) => cat.id === id) || {
+      id: 0,
+      name: "Não categorizado",
+      icon: "❓",
+      color: "#94a3b8",
+      emoji: "❓",
+    }
+  );
 };
 
 export const getDefaultCategory = (typeId) => {
   const cats = getCategoriesByType(typeId);
-  return cats[0] || { id: 0, name: "Geral", icon: "📄", color: "#94a3b8", emoji: "📝" };
+  return (
+    cats[0] || {
+      id: 0,
+      name: "Geral",
+      icon: "📄",
+      color: "#94a3b8",
+      emoji: "📝",
+    }
+  );
 };

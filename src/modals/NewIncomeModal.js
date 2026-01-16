@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Modal,
   View,
@@ -11,6 +11,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  FlatList,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors } from "../theme/colors";
@@ -20,16 +21,39 @@ import { getCategoriesByType } from "../services/categories";
 
 export default function NewIncomeModal({ visible, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [formData, setFormData] = useState({
     value: "",
     description: "",
     date: new Date().toISOString().split("T")[0],
+    notes: "",
   });
 
-  const [selectedCategory, setSelectedCategory] = useState(null);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const incomeCategories = getCategoriesByType(1);
 
-  const incomeCategories = getCategoriesByType(1); // typeId: 1 = Receita
+  // Mapeamento entre sugestões e categorias
+  const suggestionToCategoryMap = {
+    "Salário": "Salário",
+    "Freelance": "Freelance", 
+    "Venda": "Venda",
+    "Investimento": "Investimento",
+    "Presente": "Presente",
+    "Reembolso": "Reembolso",
+    "Rendimento": "Investimento", // Mapeia para categoria Investimento
+    "Extra": "Outros"
+  };
+
+  const incomeSuggestions = [
+    "Salário", "Freelance", "Venda", "Investimento", 
+    "Presente", "Reembolso", "Rendimento", "Extra"
+  ];
+
+  useEffect(() => {
+    if (incomeCategories.length > 0 && !selectedCategory) {
+      setSelectedCategory(incomeCategories[0]);
+    }
+  }, []);
 
   const handleInputChange = (field, value) => {
     setFormData({
@@ -59,6 +83,49 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     return formData.value.replace(",", ".");
   };
 
+  const handleCategorySelect = (category) => {
+    setSelectedCategory(category);
+    setShowCategoryPicker(false);
+  };
+
+  // ✅ NOVA FUNÇÃO: Quando selecionar sugestão, também seleciona categoria
+  const handleSuggestionSelect = (suggestion) => {
+    // Atualiza a descrição
+    handleInputChange("description", suggestion);
+    
+    // Encontra a categoria correspondente
+    const categoryName = suggestionToCategoryMap[suggestion];
+    if (categoryName) {
+      const matchingCategory = incomeCategories.find(
+        cat => cat.name === categoryName
+      );
+      if (matchingCategory) {
+        setSelectedCategory(matchingCategory);
+      }
+    }
+  };
+
+  // ✅ NOVA FUNÇÃO: Quando mudar categoria, atualiza sugestão se houver correspondência
+  useEffect(() => {
+    if (selectedCategory && formData.description) {
+      // Verifica se a descrição atual corresponde a alguma sugestão
+      const suggestionMatch = incomeSuggestions.find(
+        suggestion => suggestionToCategoryMap[suggestion] === selectedCategory.name
+      );
+      
+      // Se não encontrar correspondência exata, não faz nada
+      // (mantém a descrição do usuário)
+    }
+  }, [selectedCategory]);
+
+  const isFormValid = () => {
+    const hasValue = formData.value && parseFloat(getNumericValue()) > 0;
+    const hasDescription = formData.description.trim().length > 0;
+    const hasCategory = selectedCategory !== null;
+    
+    return hasValue && hasDescription && hasCategory;
+  };
+
   const handleSubmit = async () => {
     if (!formData.value || parseFloat(getNumericValue()) <= 0) {
       Alert.alert("Erro", "Informe um valor válido para a receita");
@@ -67,6 +134,11 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
 
     if (!formData.description.trim()) {
       Alert.alert("Erro", "Informe uma descrição para a receita");
+      return;
+    }
+
+    if (!selectedCategory) {
+      Alert.alert("Erro", "Selecione uma categoria para a receita");
       return;
     }
 
@@ -79,8 +151,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
         description: formData.description.trim(),
         date: formData.date,
         status: true,
-        // Podemos adicionar a categoria na descrição ou criar campo separado
-        categoryId: selectedCategory?.id || 1,
+        categoryId: selectedCategory ? selectedCategory.id : null,
       };
 
       console.log("📤 Enviando nova receita:", transactionData);
@@ -88,10 +159,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
       const response = await createTransaction(transactionData);
 
       if (response.error) {
-        Alert.alert(
-          "Erro",
-          response.message || "Não foi possível criar a receita"
-        );
+        Alert.alert("Erro", response.message || "Não foi possível criar a receita");
         return;
       }
 
@@ -108,8 +176,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
       console.error("Erro ao criar receita:", error);
       Alert.alert(
         "Erro",
-        error.response?.data?.message ||
-          "Erro ao salvar receita. Tente novamente."
+        error.response?.data?.message || "Erro ao salvar receita. Tente novamente."
       );
     } finally {
       setLoading(false);
@@ -121,13 +188,72 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
       value: "",
       description: "",
       date: new Date().toISOString().split("T")[0],
+      notes: "",
     });
+    if (incomeCategories.length > 0) {
+      setSelectedCategory(incomeCategories[0]);
+    }
   };
 
   const handleClose = () => {
     resetForm();
     onClose();
   };
+
+  const CategoryPickerModal = () => (
+    <Modal
+      visible={showCategoryPicker}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowCategoryPicker(false)}
+    >
+      <View style={styles.categoryPickerOverlay}>
+        <View style={styles.categoryPickerContainer}>
+          <View style={styles.categoryPickerHeader}>
+            <Text style={styles.categoryPickerTitle}>Selecionar Categoria</Text>
+            <TouchableOpacity 
+              onPress={() => setShowCategoryPicker(false)}
+              style={styles.categoryPickerCloseButton}
+            >
+              <MaterialIcons name="close" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+          
+          <FlatList
+            data={incomeCategories}
+            keyExtractor={(item) => item.id.toString()}
+            numColumns={3}
+            contentContainerStyle={styles.categoryPickerList}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[
+                  styles.categoryPickerItem,
+                  selectedCategory?.id === item.id && styles.categoryPickerItemSelected
+                ]}
+                onPress={() => handleCategorySelect(item)}
+              >
+                <View style={[
+                  styles.categoryIcon,
+                  { backgroundColor: item.color + "20" }
+                ]}>
+                  <Text style={styles.categoryEmoji}>{item.emoji || item.icon}</Text>
+                </View>
+                <Text 
+                  style={[
+                    styles.categoryPickerItemText,
+                    selectedCategory?.id === item.id && styles.categoryPickerItemTextSelected
+                  ]}
+                  numberOfLines={1}
+                >
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
 
   return (
     <Modal
@@ -145,48 +271,24 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
           style={styles.modalBackground}
         >
           <View style={styles.modalContainer}>
-            {/* HEADER DO MODAL */}
             <View style={styles.modalHeader}>
               <View style={styles.headerTitleContainer}>
-                <View
-                  style={[
-                    styles.iconContainer,
-                    { backgroundColor: "#22c55e20" },
-                  ]}
-                >
-                  <MaterialIcons
-                    name="attach-money"
-                    size={24}
-                    color={colors.success}
-                  />
+                <View style={[styles.iconContainer, { backgroundColor: "#22c55e20" }]}>
+                  <MaterialIcons name="attach-money" size={24} color={colors.success} />
                 </View>
                 <View>
                   <Text style={styles.modalTitle}>Nova Receita</Text>
-                  <Text style={styles.modalSubtitle}>
-                    Adicione uma nova entrada
-                  </Text>
+                  <Text style={styles.modalSubtitle}>Adicione uma nova entrada</Text>
                 </View>
               </View>
 
-              <TouchableOpacity
-                onPress={handleClose}
-                style={styles.closeButton}
-              >
-                <MaterialIcons
-                  name="close"
-                  size={24}
-                  color={colors.textSecondary}
-                />
+              <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+                <MaterialIcons name="close" size={24} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView
-              style={styles.modalContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {/* CARD DO FORMULÁRIO */}
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
               <View style={styles.formCard}>
-                {/* VALOR */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Valor (R$)</Text>
                   <View style={styles.valueInputContainer}>
@@ -203,7 +305,6 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                   </View>
                 </View>
 
-                {/* DESCRIÇÃO */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Descrição</Text>
                   <TextInput
@@ -211,9 +312,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                     placeholder="Ex: Salário, Freelance, Venda..."
                     placeholderTextColor={colors.textSecondary + "80"}
                     value={formData.description}
-                    onChangeText={(text) =>
-                      handleInputChange("description", text)
-                    }
+                    onChangeText={(text) => handleInputChange("description", text)}
                     editable={!loading}
                     multiline
                     maxLength={100}
@@ -223,15 +322,83 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                   </Text>
                 </View>
 
-                {/* DATA */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Sugestões rápidas</Text>
+                  <View style={styles.suggestionsContainer}>
+                    {incomeSuggestions.map((suggestion, index) => {
+                      // Verifica se esta sugestão corresponde à categoria selecionada
+                      const isActive = selectedCategory && 
+                        suggestionToCategoryMap[suggestion] === selectedCategory.name &&
+                        formData.description === suggestion;
+                      
+                      return (
+                        <TouchableOpacity
+                          key={index}
+                          style={[
+                            styles.suggestionChip,
+                            isActive && styles.suggestionChipActive
+                          ]}
+                          onPress={() => handleSuggestionSelect(suggestion)}
+                        >
+                          <Text style={[
+                            styles.suggestionText,
+                            isActive && styles.suggestionTextActive
+                          ]}>
+                            {suggestion}
+                          </Text>
+                          {isActive && (
+                            <MaterialIcons name="check" size={14} color={colors.success} />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Categoria *</Text>
+                  <TouchableOpacity 
+                    style={styles.categoryButton}
+                    onPress={() => setShowCategoryPicker(true)}
+                    disabled={loading}
+                  >
+                    <View style={styles.categoryButtonContent}>
+                      {selectedCategory ? (
+                        <View style={styles.selectedCategoryInfo}>
+                          <View style={[
+                            styles.categoryIconSmall,
+                            { backgroundColor: selectedCategory.color + "20" }
+                          ]}>
+                            <Text style={styles.categoryEmojiSmall}>
+                              {selectedCategory.emoji || selectedCategory.icon}
+                            </Text>
+                          </View>
+                          <Text style={styles.selectedCategoryName}>
+                            {selectedCategory.name}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.categoryPlaceholder}>
+                          Selecione uma categoria
+                        </Text>
+                      )}
+                      <MaterialIcons name="arrow-forward-ios" size={16} color={colors.textSecondary} />
+                    </View>
+                  </TouchableOpacity>
+                  {!selectedCategory && (
+                    <View style={styles.warningContainer}>
+                      <MaterialIcons name="warning" size={14} color="#f59e0b" />
+                      <Text style={styles.warningText}>
+                        Selecione uma categoria para habilitar o registro
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Data</Text>
                   <View style={styles.dateContainer}>
-                    <MaterialIcons
-                      name="calendar-today"
-                      size={20}
-                      color={colors.primary}
-                    />
+                    <MaterialIcons name="calendar-today" size={20} color={colors.primary} />
                     <Text style={styles.dateText}>
                       {new Date(formData.date).toLocaleDateString("pt-BR", {
                         weekday: "long",
@@ -246,34 +413,14 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                   </Text>
                 </View>
 
-                {/* CATEGORIA (Futura implementação) */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Categoria (Opcional)</Text>
-                  <TouchableOpacity
-                    style={styles.categoryButton}
-                    disabled={true}
-                  >
-                    <Text style={styles.categoryButtonText}>
-                      Selecionar categoria
-                    </Text>
-                    <MaterialIcons
-                      name="arrow-forward-ios"
-                      size={16}
-                      color={colors.textSecondary}
-                    />
-                  </TouchableOpacity>
-                  <Text style={styles.hintText}>
-                    Categorias em breve disponíveis
-                  </Text>
-                </View>
-
-                {/* NOTAS (Opcional) */}
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Notas (Opcional)</Text>
                   <TextInput
                     style={[styles.input, styles.textArea]}
                     placeholder="Adicione observações, detalhes..."
                     placeholderTextColor={colors.textSecondary + "80"}
+                    value={formData.notes}
+                    onChangeText={(text) => handleInputChange("notes", text)}
                     multiline
                     numberOfLines={3}
                     editable={!loading}
@@ -281,15 +428,12 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                 </View>
               </View>
 
-              {/* RECIBO PREVIEW */}
               <View style={styles.receiptPreview}>
                 <Text style={styles.receiptTitle}>📋 Resumo da Receita</Text>
 
                 <View style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>Valor:</Text>
-                  <Text
-                    style={[styles.receiptValue, { color: colors.success }]}
-                  >
+                  <Text style={[styles.receiptValue, { color: colors.success }]}>
                     {formData.value ? `R$ ${formData.value}` : "R$ 0,00"}
                   </Text>
                 </View>
@@ -302,6 +446,24 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                 </View>
 
                 <View style={styles.receiptRow}>
+                  <Text style={styles.receiptLabel}>Categoria:</Text>
+                  {selectedCategory ? (
+                    <View style={styles.categoryBadge}>
+                      <Text style={styles.categoryEmojiBadge}>
+                        {selectedCategory.emoji || selectedCategory.icon}
+                      </Text>
+                      <Text style={styles.categoryNameBadge}>
+                        {selectedCategory.name}
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text style={[styles.receiptValue, { color: colors.textSecondary }]}>
+                      Não selecionada
+                    </Text>
+                  )}
+                </View>
+
+                <View style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>Data:</Text>
                   <Text style={styles.receiptValue}>
                     {new Date(formData.date).toLocaleDateString("pt-BR")}
@@ -310,22 +472,42 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
 
                 <View style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>Tipo:</Text>
-                  <View
-                    style={[styles.typeBadge, { backgroundColor: "#22c55e20" }]}
-                  >
-                    <Text
-                      style={[styles.typeBadgeText, { color: colors.success }]}
-                    >
+                  <View style={[styles.typeBadge, { backgroundColor: "#22c55e20" }]}>
+                    <Text style={[styles.typeBadgeText, { color: colors.success }]}>
                       RECEITA
                     </Text>
                   </View>
                 </View>
+
+                {formData.notes && (
+                  <View style={styles.receiptRow}>
+                    <Text style={styles.receiptLabel}>Notas:</Text>
+                    <Text style={[styles.receiptValue, { color: colors.textSecondary }]}>
+                      {formData.notes}
+                    </Text>
+                  </View>
+                )}
               </View>
+
+              <View style={styles.tipContainer}>
+                <MaterialIcons name="lightbulb" size={20} color="#f59e0b" />
+                <Text style={styles.tipText}>
+                  Dica: Tente economizar pelo menos 20% da sua receita para investimentos.
+                </Text>
+              </View>
+
+              {!isFormValid() && (
+                <View style={styles.formValidationContainer}>
+                  <MaterialIcons name="info" size={16} color={colors.textSecondary} />
+                  <Text style={styles.formValidationText}>
+                    Preencha todos os campos obrigatórios (*) para registrar a receita
+                  </Text>
+                </View>
+              )}
             </ScrollView>
 
-            {/* FOOTER DO MODAL */}
             <View style={styles.modalFooter}>
-              <TouchableOpacity
+              <TouchableOpacity 
                 style={styles.cancelButton}
                 onPress={handleClose}
                 disabled={loading}
@@ -333,23 +515,20 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
+              <TouchableOpacity 
                 style={[
                   styles.submitButton,
-                  (!formData.value || !formData.description) &&
-                    styles.submitButtonDisabled,
+                  !isFormValid() && styles.submitButtonDisabled
                 ]}
                 onPress={handleSubmit}
-                disabled={loading || !formData.value || !formData.description}
+                disabled={loading || !isFormValid()}
               >
                 {loading ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <>
                     <MaterialIcons name="check" size={20} color="#fff" />
-                    <Text style={styles.submitButtonText}>
-                      Adicionar Receita
-                    </Text>
+                    <Text style={styles.submitButtonText}>Adicionar Receita</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -357,6 +536,8 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
           </View>
         </LinearGradient>
       </KeyboardAvoidingView>
+      
+      <CategoryPickerModal />
     </Modal>
   );
 }
@@ -478,6 +659,84 @@ const styles = StyleSheet.create({
     textAlign: "right",
     marginTop: 4,
   },
+  suggestionsContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  suggestionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: colors.border,
+    borderRadius: 20,
+  },
+  suggestionChipActive: {
+    backgroundColor: colors.success + "20",
+    borderWidth: 1,
+    borderColor: colors.success,
+  },
+  suggestionText: {
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  suggestionTextActive: {
+    color: colors.success,
+    fontWeight: "600",
+  },
+  categoryButton: {
+    padding: 16,
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  categoryButtonContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  selectedCategoryInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  categoryIconSmall: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  categoryEmojiSmall: {
+    fontSize: 18,
+  },
+  selectedCategoryName: {
+    fontSize: 16,
+    color: colors.textPrimary,
+    fontWeight: "500",
+  },
+  categoryPlaceholder: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    fontStyle: "italic",
+  },
+  warningContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#fef3c7",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  warningText: {
+    fontSize: 12,
+    color: "#92400e",
+    flex: 1,
+  },
   dateContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -499,31 +758,11 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontStyle: "italic",
   },
-  categoryButton: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  categoryButtonText: {
-    fontSize: 16,
-    color: colors.textPrimary,
-  },
-  hintText: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 6,
-    fontStyle: "italic",
-  },
   receiptPreview: {
     backgroundColor: colors.card,
     borderRadius: 20,
     padding: 20,
-    marginBottom: 24,
+    marginBottom: 20,
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -553,6 +792,23 @@ const styles = StyleSheet.create({
     flex: 2,
     textAlign: "right",
   },
+  categoryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#f8fafc",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  categoryEmojiBadge: {
+    fontSize: 16,
+  },
+  categoryNameBadge: {
+    fontSize: 12,
+    color: colors.textPrimary,
+    fontWeight: "500",
+  },
   typeBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -561,6 +817,37 @@ const styles = StyleSheet.create({
   typeBadgeText: {
     fontSize: 12,
     fontWeight: "700",
+  },
+  tipContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#fffbeb",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#f59e0b30",
+    marginBottom: 16,
+  },
+  tipText: {
+    flex: 1,
+    fontSize: 14,
+    color: "#92400e",
+    lineHeight: 20,
+  },
+  formValidationContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.border,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 24,
+  },
+  formValidationText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    flex: 1,
   },
   modalFooter: {
     flexDirection: "row",
@@ -599,5 +886,78 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#fff",
+  },
+  categoryPickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  categoryPickerContainer: {
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    maxHeight: "70%",
+    paddingTop: 20,
+  },
+  categoryPickerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  categoryPickerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  categoryPickerCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: colors.border,
+  },
+  categoryPickerList: {
+    padding: 24,
+  },
+  categoryPickerItem: {
+    flex: 1,
+    alignItems: "center",
+    margin: 8,
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    maxWidth: 100,
+  },
+  categoryPickerItemSelected: {
+    backgroundColor: colors.primary + "10",
+    borderColor: colors.primary,
+  },
+  categoryIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  categoryEmoji: {
+    fontSize: 28,
+  },
+  categoryPickerItemText: {
+    fontSize: 12,
+    color: colors.textPrimary,
+    textAlign: "center",
+    fontWeight: "500",
+  },
+  categoryPickerItemTextSelected: {
+    color: colors.primary,
+    fontWeight: "700",
   },
 });
