@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Modal,
   View,
@@ -11,20 +11,49 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  FlatList,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors } from "../theme/colors";
 import { MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import { createTransaction } from "../services/transaction";
+import { getCategoriesByType } from "../services/categories";
 
 export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [formData, setFormData] = useState({
     value: "",
     description: "",
     date: new Date().toISOString().split("T")[0],
-    investmentType: "renda_fixa", 
+    notes: "",
   });
+
+  const investmentCategories = getCategoriesByType(3); // typeId: 3 para investimentos
+
+  // Mapeamento entre sugestões e categorias
+  const suggestionToCategoryMap = {
+    "Tesouro Direto": "Tesouro Direto",
+    "CDB": "CDB", 
+    "LCI/LCA": "CDB",
+    "Ações": "Ações",
+    "FIIs": "FIIs",
+    "ETF": "ETF",
+    "Bitcoin": "Criptomoedas",
+    "Criptomoedas": "Criptomoedas",
+    "Previdência": "Previdência",
+    "Poupança": "Outros",
+    "Fundos": "Outros",
+    "Renda Fixa": "CDB",
+    "Renda Variável": "Ações"
+  };
+
+  const investmentSuggestions = [
+    "Tesouro Direto", "CDB", "LCI/LCA", "Ações", 
+    "FIIs", "ETF", "Bitcoin", "Criptomoedas",
+    "Previdência", "Poupança", "Fundos"
+  ];
 
   const investmentTypes = [
     { id: "renda_fixa", label: "Renda Fixa", icon: "📊", color: "#3b82f6" },
@@ -32,6 +61,12 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
     { id: "cripto", label: "Criptomoedas", icon: "₿", color: "#f59e0b" },
     { id: "fundo", label: "Fundos", icon: "🏦", color: "#10b981" },
   ];
+
+  useEffect(() => {
+    if (investmentCategories.length > 0 && !selectedCategory) {
+      setSelectedCategory(investmentCategories[0]);
+    }
+  }, [investmentCategories]);
 
   const handleInputChange = (field, value) => {
     setFormData({
@@ -66,9 +101,49 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
     return type ? type.label : "Outro";
   };
 
-  const getInvestmentTypeColor = (typeId) => {
-    const type = investmentTypes.find(t => t.id === typeId);
-    return type ? type.color : colors.primary;
+  // ✅ Quando selecionar sugestão, também seleciona categoria
+  const handleSuggestionSelect = (suggestion) => {
+    // Atualiza a descrição
+    handleInputChange("description", suggestion);
+    
+    // Encontra a categoria correspondente
+    const categoryName = suggestionToCategoryMap[suggestion];
+    if (categoryName) {
+      const matchingCategory = investmentCategories.find(
+        cat => cat.name === categoryName
+      );
+      if (matchingCategory) {
+        setSelectedCategory(matchingCategory);
+      }
+    }
+  };
+
+  // ✅ Quando mudar categoria, atualiza sugestão se houver correspondência
+  useEffect(() => {
+    if (selectedCategory && formData.description) {
+      // Verifica se a descrição atual corresponde a alguma sugestão
+      const suggestionMatch = investmentSuggestions.find(
+        suggestion => suggestionToCategoryMap[suggestion] === selectedCategory.name
+      );
+      
+      // Se encontrar correspondência, atualiza a descrição
+      if (suggestionMatch && formData.description !== suggestionMatch) {
+        handleInputChange("description", suggestionMatch);
+      }
+    }
+  }, [selectedCategory]);
+
+  const handleCategorySelect = (category) => {
+    setSelectedCategory(category);
+    setShowCategoryPicker(false);
+  };
+
+  const isFormValid = () => {
+    const hasValue = formData.value && parseFloat(getNumericValue()) > 0;
+    const hasDescription = formData.description.trim().length > 0;
+    const hasCategory = selectedCategory !== null;
+    
+    return hasValue && hasDescription && hasCategory;
   };
 
   const handleSubmit = async () => {
@@ -82,15 +157,21 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
       return;
     }
 
+    if (!selectedCategory) {
+      Alert.alert("Erro", "Selecione uma categoria para o investimento");
+      return;
+    }
+
     try {
       setLoading(true);
 
       const transactionData = {
         value: getNumericValue(),
-        typeId: 3, 
-        description: `${getInvestmentTypeLabel(formData.investmentType)} - ${formData.description.trim()}`,
+        typeId: 3, // Investimento
+        description: formData.description.trim(),
         date: formData.date,
         status: true,
+        categoryId: selectedCategory ? selectedCategory.id : null,
       };
 
       console.log("📤 Enviando novo investimento:", transactionData);
@@ -110,7 +191,7 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
             text: "Ver detalhes",
             onPress: () => {
               resetForm();
-              onSuccess(); 
+              onSuccess();
             },
           },
         ]
@@ -132,8 +213,11 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
       value: "",
       description: "",
       date: new Date().toISOString().split("T")[0],
-      investmentType: "renda_fixa",
+      notes: "",
     });
+    if (investmentCategories.length > 0) {
+      setSelectedCategory(investmentCategories[0]);
+    }
   };
 
   const handleClose = () => {
@@ -141,10 +225,81 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
     onClose();
   };
 
-  const investmentSuggestions = [
-    "Tesouro Direto", "CDB", "LCI/LCA", "Ações", 
-    "FIIs", "ETF", "Bitcoin", "Poupança"
-  ];
+  const CategoryPickerModal = () => (
+    <Modal
+      visible={showCategoryPicker}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowCategoryPicker(false)}
+    >
+      <View style={styles.categoryPickerOverlay}>
+        <View style={styles.categoryPickerContainer}>
+          <View style={styles.categoryPickerHeader}>
+            <Text style={styles.categoryPickerTitle}>Selecionar Categoria</Text>
+            <TouchableOpacity 
+              onPress={() => setShowCategoryPicker(false)}
+              style={styles.categoryPickerCloseButton}
+            >
+              <MaterialIcons name="close" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+          
+          <FlatList
+            data={investmentCategories}
+            keyExtractor={(item) => item.id.toString()}
+            numColumns={3}
+            contentContainerStyle={styles.categoryPickerList}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[
+                  styles.categoryPickerItem,
+                  selectedCategory?.id === item.id && styles.categoryPickerItemSelected
+                ]}
+                onPress={() => handleCategorySelect(item)}
+              >
+                <View style={[
+                  styles.categoryIcon,
+                  { backgroundColor: item.color + "20" }
+                ]}>
+                  <Text style={styles.categoryEmoji}>{item.emoji || item.icon}</Text>
+                </View>
+                <Text 
+                  style={[
+                    styles.categoryPickerItemText,
+                    selectedCategory?.id === item.id && styles.categoryPickerItemTextSelected
+                  ]}
+                  numberOfLines={1}
+                >
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const calculateReturn = (years, rate = 0.08) => {
+    if (!formData.value) return "0,00";
+    
+    const value = parseFloat(getNumericValue());
+    const futureValue = value * Math.pow(1 + rate, years);
+    
+    return futureValue.toFixed(2).replace(".", ",");
+  };
+
+  const getRiskLevel = (investmentType) => {
+    switch(investmentType) {
+      case "renda_fixa": return { level: "Baixo", color: "#22c55e" };
+      case "cripto": return { level: "Alto", color: "#ef4444" };
+      case "renda_variavel": return { level: "Médio-Alto", color: "#f59e0b" };
+      case "fundo": return { level: "Médio", color: "#3b82f6" };
+      default: return { level: "Médio", color: colors.textSecondary };
+    }
+  };
+
+  const currentRisk = getRiskLevel("renda_fixa"); // Você pode ajustar isso
 
   return (
     <Modal
@@ -203,47 +358,40 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Tipo de Investimento</Text>
-                  <View style={styles.investmentTypesGrid}>
-                    {investmentTypes.map((type) => (
-                      <TouchableOpacity
-                        key={type.id}
-                        style={[
-                          styles.investmentTypeCard,
-                          formData.investmentType === type.id && styles.investmentTypeCardSelected,
-                          { borderColor: formData.investmentType === type.id ? type.color : colors.border }
-                        ]}
-                        onPress={() => handleInputChange("investmentType", type.id)}
-                      >
-                        <Text style={{ fontSize: 24, marginBottom: 8 }}>{type.icon}</Text>
-                        <Text style={[
-                          styles.investmentTypeLabel,
-                          formData.investmentType === type.id && { color: type.color, fontWeight: '700' }
-                        ]}>
-                          {type.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Sugestões de ativos</Text>
                   <View style={styles.suggestionsContainer}>
-                    {investmentSuggestions.map((suggestion, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        style={styles.suggestionChip}
-                        onPress={() => handleInputChange("description", suggestion)}
-                      >
-                        <Text style={styles.suggestionText}>{suggestion}</Text>
-                      </TouchableOpacity>
-                    ))}
+                    {investmentSuggestions.map((suggestion, index) => {
+                      // Verifica se esta sugestão corresponde à categoria selecionada
+                      const isActive = selectedCategory && 
+                        suggestionToCategoryMap[suggestion] === selectedCategory.name &&
+                        formData.description === suggestion;
+                      
+                      return (
+                        <TouchableOpacity
+                          key={index}
+                          style={[
+                            styles.suggestionChip,
+                            isActive && styles.suggestionChipActive
+                          ]}
+                          onPress={() => handleSuggestionSelect(suggestion)}
+                        >
+                          <Text style={[
+                            styles.suggestionText,
+                            isActive && styles.suggestionTextActive
+                          ]}>
+                            {suggestion}
+                          </Text>
+                          {isActive && (
+                            <MaterialIcons name="check" size={14} color={colors.primary} />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Ativo específico</Text>
+                  <Text style={styles.inputLabel}>Ativo específico *</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Ex: CDB Banco XYZ 110% CDI, Ações PETR4..."
@@ -260,6 +408,46 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
                 </View>
 
                 <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Categoria *</Text>
+                  <TouchableOpacity 
+                    style={styles.categoryButton}
+                    onPress={() => setShowCategoryPicker(true)}
+                    disabled={loading}
+                  >
+                    <View style={styles.categoryButtonContent}>
+                      {selectedCategory ? (
+                        <View style={styles.selectedCategoryInfo}>
+                          <View style={[
+                            styles.categoryIconSmall,
+                            { backgroundColor: selectedCategory.color + "20" }
+                          ]}>
+                            <Text style={styles.categoryEmojiSmall}>
+                              {selectedCategory.emoji || selectedCategory.icon}
+                            </Text>
+                          </View>
+                          <Text style={styles.selectedCategoryName}>
+                            {selectedCategory.name}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.categoryPlaceholder}>
+                          Selecione uma categoria
+                        </Text>
+                      )}
+                      <MaterialIcons name="arrow-forward-ios" size={16} color={colors.textSecondary} />
+                    </View>
+                  </TouchableOpacity>
+                  {!selectedCategory && (
+                    <View style={styles.warningContainer}>
+                      <MaterialIcons name="warning" size={14} color="#f59e0b" />
+                      <Text style={styles.warningText}>
+                        Selecione uma categoria para habilitar o registro
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Data da aplicação</Text>
                   <View style={styles.dateContainer}>
                     <MaterialIcons name="calendar-today" size={20} color={colors.primary} />
@@ -272,41 +460,73 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
                       })}
                     </Text>
                   </View>
+                  <Text style={styles.dateHint}>
+                    Data atual selecionada automaticamente
+                  </Text>
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Objetivo (Opcional)</Text>
+                  <Text style={styles.inputLabel}>Notas (Opcional)</Text>
                   <TextInput
                     style={[styles.input, styles.textArea]}
-                    placeholder="Ex: Reserva de emergência, Aposentadoria..."
+                    placeholder="Ex: Vencimento em 2 anos, Taxa de administração..."
                     placeholderTextColor={colors.textSecondary + "80"}
+                    value={formData.notes}
+                    onChangeText={(text) => handleInputChange("notes", text)}
                     multiline
-                    numberOfLines={2}
+                    numberOfLines={3}
                     editable={!loading}
                   />
                 </View>
 
-                {/* PERFIL DE RISCO (Placeholder) */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Perfil de risco</Text>
-                  <TouchableOpacity 
-                    style={styles.riskButton}
-                    disabled={true}
-                  >
+                  <Text style={styles.inputLabel}>Tipo de Investimento</Text>
+                  <View style={styles.investmentTypesGrid}>
+                    {investmentTypes.map((type) => (
+                      <TouchableOpacity
+                        key={type.id}
+                        style={[
+                          styles.investmentTypeCard,
+                          { borderColor: type.color }
+                        ]}
+                        onPress={() => {
+                          // Lógica para mapear tipo para categoria se necessário
+                        }}
+                      >
+                        <Text style={{ fontSize: 24, marginBottom: 8 }}>{type.icon}</Text>
+                        <Text style={[
+                          styles.investmentTypeLabel,
+                          { color: type.color, fontWeight: '600' }
+                        ]}>
+                          {type.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                <View style={styles.riskContainer}>
+                  <Text style={styles.inputLabel}>Perfil de risco estimado</Text>
+                  <View style={styles.riskLevel}>
                     <View style={styles.riskIndicator}>
-                      <View style={[styles.riskDot, { backgroundColor: '#22c55e' }]} />
-                      <View style={[styles.riskDot, { backgroundColor: '#f59e0b' }]} />
-                      <View style={[styles.riskDot, { backgroundColor: colors.border }]} />
-                      <View style={[styles.riskDot, { backgroundColor: colors.border }]} />
-                      <View style={[styles.riskDot, { backgroundColor: colors.border }]} />
+                      {["#22c55e", "#f59e0b", "#ef4444", "#94a3b8", "#94a3b8"].map((color, index) => (
+                        <View 
+                          key={index}
+                          style={[
+                            styles.riskDot,
+                            { backgroundColor: color }
+                          ]}
+                        />
+                      ))}
                     </View>
-                    <Text style={styles.riskButtonText}>Moderado</Text>
-                    <MaterialIcons name="arrow-forward-ios" size={16} color={colors.textSecondary} />
-                  </TouchableOpacity>
+                    <Text style={[styles.riskText, { color: currentRisk.color }]}>
+                      {currentRisk.level}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
-              {/* PREVISÃO DE RETORNO (Estimativa) */}
+              {/* PREVISÃO DE RETORNO */}
               <View style={styles.returnEstimate}>
                 <Text style={styles.returnTitle}>📊 Estimativa de Retorno</Text>
                 
@@ -320,25 +540,28 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
                 <View style={styles.returnRow}>
                   <Text style={styles.returnLabel}>Em 1 ano (8% a.a):</Text>
                   <Text style={[styles.returnValue, { color: colors.success }]}>
-                    {formData.value ? 
-                      `R$ ${(parseFloat(getNumericValue()) * 1.08).toFixed(2).replace('.', ',')}` : 
-                      "R$ 0,00"}
+                    R$ {calculateReturn(1)}
                   </Text>
                 </View>
                 
                 <View style={styles.returnRow}>
                   <Text style={styles.returnLabel}>Em 5 anos (8% a.a):</Text>
                   <Text style={[styles.returnValue, { color: colors.success }]}>
-                    {formData.value ? 
-                      `R$ ${(parseFloat(getNumericValue()) * Math.pow(1.08, 5)).toFixed(2).replace('.', ',')}` : 
-                      "R$ 0,00"}
+                    R$ {calculateReturn(5)}
+                  </Text>
+                </View>
+                
+                <View style={styles.returnRow}>
+                  <Text style={styles.returnLabel}>Em 10 anos (8% a.a):</Text>
+                  <Text style={[styles.returnValue, { color: colors.success }]}>
+                    R$ {calculateReturn(10)}
                   </Text>
                 </View>
                 
                 <View style={styles.returnNote}>
                   <MaterialIcons name="info" size={14} color={colors.textSecondary} />
                   <Text style={styles.returnNoteText}>
-                    * Estimativa baseada em retorno médio histórico
+                    * Estimativa baseada em retorno médio histórico. Valores podem variar.
                   </Text>
                 </View>
               </View>
@@ -346,9 +569,18 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
               <View style={styles.tipContainer}>
                 <MaterialIcons name="lightbulb" size={20} color="#f59e0b" />
                 <Text style={styles.tipText}>
-                  Invista regularmente (DCA) e mantenha um horizonte de longo prazo para melhores resultados.
+                  💡 Invista regularmente (DCA) e mantenha um horizonte de longo prazo para melhores resultados.
                 </Text>
               </View>
+
+              {!isFormValid() && (
+                <View style={styles.formValidationContainer}>
+                  <MaterialIcons name="info" size={16} color={colors.textSecondary} />
+                  <Text style={styles.formValidationText}>
+                    Preencha todos os campos obrigatórios (*) para registrar o investimento
+                  </Text>
+                </View>
+              )}
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -363,10 +595,10 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
               <TouchableOpacity 
                 style={[
                   styles.submitButton,
-                  (!formData.value || !formData.description) && styles.submitButtonDisabled
+                  !isFormValid() && styles.submitButtonDisabled
                 ]}
                 onPress={handleSubmit}
-                disabled={loading || !formData.value || !formData.description}
+                disabled={loading || !isFormValid()}
               >
                 {loading ? (
                   <ActivityIndicator color="#fff" />
@@ -381,6 +613,8 @@ export default function NewInvestmentModal({ visible, onClose, onSuccess }) {
           </View>
         </LinearGradient>
       </KeyboardAvoidingView>
+      
+      <CategoryPickerModal />
     </Modal>
   );
 }
@@ -489,28 +723,32 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontStyle: "italic",
   },
-  investmentTypesGrid: {
+  suggestionsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 8,
   },
-  investmentTypeCard: {
-    width: "48%",
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
+  suggestionChip: {
+    flexDirection: "row",
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: colors.border,
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: colors.border,
+    borderRadius: 20,
   },
-  investmentTypeCardSelected: {
-    backgroundColor: "#eff6ff",
+  suggestionChipActive: {
+    backgroundColor: colors.primary + "20",
+    borderWidth: 1,
+    borderColor: colors.primary,
   },
-  investmentTypeLabel: {
+  suggestionText: {
     fontSize: 14,
-    fontWeight: "600",
     color: colors.textPrimary,
-    textAlign: "center",
+  },
+  suggestionTextActive: {
+    color: colors.primary,
+    fontWeight: "600",
   },
   input: {
     borderWidth: 1,
@@ -522,7 +760,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   textArea: {
-    minHeight: 60,
+    minHeight: 80,
     textAlignVertical: "top",
   },
   charCount: {
@@ -531,20 +769,56 @@ const styles = StyleSheet.create({
     textAlign: "right",
     marginTop: 4,
   },
-  suggestionsContainer: {
+  categoryButton: {
+    padding: 16,
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  categoryButtonContent: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  suggestionChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: colors.border,
-    borderRadius: 20,
+  selectedCategoryInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
-  suggestionText: {
-    fontSize: 14,
+  categoryIconSmall: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  categoryEmojiSmall: {
+    fontSize: 18,
+  },
+  selectedCategoryName: {
+    fontSize: 16,
     color: colors.textPrimary,
+    fontWeight: "500",
+  },
+  categoryPlaceholder: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    fontStyle: "italic",
+  },
+  warningContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#fef3c7",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  warningText: {
+    fontSize: 12,
+    color: "#92400e",
+    flex: 1,
   },
   dateContainer: {
     flexDirection: "row",
@@ -561,10 +835,37 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: "500",
   },
-  riskButton: {
+  dateHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 6,
+    fontStyle: "italic",
+  },
+  investmentTypesGrid: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  investmentTypeCard: {
+    width: "48%",
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
     alignItems: "center",
+    borderWidth: 2,
+  },
+  investmentTypeLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  riskContainer: {
+    marginTop: 10,
+  },
+  riskLevel: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     padding: 16,
     backgroundColor: "#f8fafc",
     borderRadius: 12,
@@ -581,10 +882,9 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
   },
-  riskButtonText: {
+  riskText: {
     fontSize: 16,
-    color: colors.textPrimary,
-    marginLeft: 12,
+    fontWeight: "600",
   },
   returnEstimate: {
     backgroundColor: colors.card,
@@ -643,13 +943,27 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: "#3b82f630",
-    marginBottom: 24,
+    marginBottom: 16,
   },
   tipText: {
     flex: 1,
     fontSize: 14,
     color: colors.primary,
     lineHeight: 20,
+  },
+  formValidationContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.border,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 24,
+  },
+  formValidationText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    flex: 1,
   },
   modalFooter: {
     flexDirection: "row",
@@ -688,5 +1002,79 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
     color: "#fff",
+  },
+  // Category Picker Styles
+  categoryPickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  categoryPickerContainer: {
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    maxHeight: "70%",
+    paddingTop: 20,
+  },
+  categoryPickerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  categoryPickerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  categoryPickerCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: colors.border,
+  },
+  categoryPickerList: {
+    padding: 24,
+  },
+  categoryPickerItem: {
+    flex: 1,
+    alignItems: "center",
+    margin: 8,
+    padding: 16,
+    borderRadius: 20,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    maxWidth: 100,
+  },
+  categoryPickerItemSelected: {
+    backgroundColor: colors.primary + "10",
+    borderColor: colors.primary,
+  },
+  categoryIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  categoryEmoji: {
+    fontSize: 28,
+  },
+  categoryPickerItemText: {
+    fontSize: 12,
+    color: colors.textPrimary,
+    textAlign: "center",
+    fontWeight: "500",
+  },
+  categoryPickerItemTextSelected: {
+    color: colors.primary,
+    fontWeight: "700",
   },
 });
