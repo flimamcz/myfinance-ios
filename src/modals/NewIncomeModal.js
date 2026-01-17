@@ -22,31 +22,37 @@ import { getCategoriesByType } from "../services/categories";
 export default function NewIncomeModal({ visible, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showDateModal, setShowDateModal] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [formData, setFormData] = useState({
     value: "",
     description: "",
-    date: new Date().toISOString().split("T")[0],
+    date: new Date(),
     notes: "",
   });
 
   const incomeCategories = getCategoriesByType(1);
 
-  // Mapeamento entre sugestões e categorias
   const suggestionToCategoryMap = {
-    "Salário": "Salário",
-    "Freelance": "Freelance", 
-    "Venda": "Venda",
-    "Investimento": "Investimento",
-    "Presente": "Presente",
-    "Reembolso": "Reembolso",
-    "Rendimento": "Investimento", // Mapeia para categoria Investimento
-    "Extra": "Outros"
+    Salário: "Salário",
+    Freelance: "Freelance",
+    Venda: "Venda",
+    Investimento: "Investimento",
+    Presente: "Presente",
+    Reembolso: "Reembolso",
+    Rendimento: "Investimento",
+    Extra: "Outros",
   };
 
   const incomeSuggestions = [
-    "Salário", "Freelance", "Venda", "Investimento", 
-    "Presente", "Reembolso", "Rendimento", "Extra"
+    "Salário",
+    "Freelance",
+    "Venda",
+    "Investimento",
+    "Presente",
+    "Reembolso",
+    "Rendimento",
+    "Extra",
   ];
 
   useEffect(() => {
@@ -88,16 +94,13 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     setShowCategoryPicker(false);
   };
 
-  // ✅ NOVA FUNÇÃO: Quando selecionar sugestão, também seleciona categoria
   const handleSuggestionSelect = (suggestion) => {
-    // Atualiza a descrição
     handleInputChange("description", suggestion);
-    
-    // Encontra a categoria correspondente
+
     const categoryName = suggestionToCategoryMap[suggestion];
     if (categoryName) {
       const matchingCategory = incomeCategories.find(
-        cat => cat.name === categoryName
+        (cat) => cat.name === categoryName,
       );
       if (matchingCategory) {
         setSelectedCategory(matchingCategory);
@@ -105,24 +108,11 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     }
   };
 
-  // ✅ NOVA FUNÇÃO: Quando mudar categoria, atualiza sugestão se houver correspondência
-  useEffect(() => {
-    if (selectedCategory && formData.description) {
-      // Verifica se a descrição atual corresponde a alguma sugestão
-      const suggestionMatch = incomeSuggestions.find(
-        suggestion => suggestionToCategoryMap[suggestion] === selectedCategory.name
-      );
-      
-      // Se não encontrar correspondência exata, não faz nada
-      // (mantém a descrição do usuário)
-    }
-  }, [selectedCategory]);
-
   const isFormValid = () => {
     const hasValue = formData.value && parseFloat(getNumericValue()) > 0;
     const hasDescription = formData.description.trim().length > 0;
     const hasCategory = selectedCategory !== null;
-    
+
     return hasValue && hasDescription && hasCategory;
   };
 
@@ -145,11 +135,13 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     try {
       setLoading(true);
 
+      const formattedDate = formData.date.toISOString().split("T")[0];
+
       const transactionData = {
         value: getNumericValue(),
         typeId: 1,
         description: formData.description.trim(),
-        date: formData.date,
+        date: formattedDate,
         status: true,
         categoryId: selectedCategory ? selectedCategory.id : null,
       };
@@ -159,7 +151,10 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
       const response = await createTransaction(transactionData);
 
       if (response.error) {
-        Alert.alert("Erro", response.message || "Não foi possível criar a receita");
+        Alert.alert(
+          "Erro",
+          response.message || "Não foi possível criar a receita",
+        );
         return;
       }
 
@@ -176,7 +171,8 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
       console.error("Erro ao criar receita:", error);
       Alert.alert(
         "Erro",
-        error.response?.data?.message || "Erro ao salvar receita. Tente novamente."
+        error.response?.data?.message ||
+          "Erro ao salvar receita. Tente novamente.",
       );
     } finally {
       setLoading(false);
@@ -187,7 +183,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     setFormData({
       value: "",
       description: "",
-      date: new Date().toISOString().split("T")[0],
+      date: new Date(),
       notes: "",
     });
     if (incomeCategories.length > 0) {
@@ -198,6 +194,211 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
   const handleClose = () => {
     resetForm();
     onClose();
+  };
+
+  const formatDate = (date) => {
+    return date.toLocaleDateString("pt-BR", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  };
+
+  const formatShortDate = (date) => {
+    return date.toLocaleDateString("pt-BR");
+  };
+
+  // COMPONENTE DE SELEÇÃO DE DATA - SIMPLIFICADO E FUNCIONAL
+  const DateSelectorModal = () => {
+    const [tempDate, setTempDate] = useState(formData.date);
+    const [day, setDay] = useState(formData.date.getDate().toString());
+    const [month, setMonth] = useState(
+      (formData.date.getMonth() + 1).toString(),
+    );
+    const [year, setYear] = useState(formData.date.getFullYear().toString());
+
+    // Funções para manipular data
+    const changeTempDate = (days) => {
+      const newDate = new Date(tempDate);
+      newDate.setDate(newDate.getDate() + days);
+      setTempDate(newDate);
+      updateInputs(newDate);
+    };
+
+    const setTempToday = () => {
+      const today = new Date();
+      setTempDate(today);
+      updateInputs(today);
+    };
+
+    const setTempYesterday = () => {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      setTempDate(yesterday);
+      updateInputs(yesterday);
+    };
+
+    const updateInputs = (date) => {
+      setDay(date.getDate().toString());
+      setMonth((date.getMonth() + 1).toString());
+      setYear(date.getFullYear().toString());
+    };
+
+    const updateDateFromInputs = () => {
+      const newDay = parseInt(day) || 1;
+      const newMonth = (parseInt(month) || 1) - 1;
+      const newYear = parseInt(year) || new Date().getFullYear();
+
+      const newDate = new Date(newYear, newMonth, newDay);
+      setTempDate(newDate);
+    };
+
+    const confirmDate = () => {
+      setFormData((prev) => ({
+        ...prev,
+        date: tempDate,
+      }));
+      setShowDateModal(false);
+    };
+
+    return (
+      <Modal
+        visible={showDateModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowDateModal(false)}
+      >
+        <View style={styles.dateModalOverlay}>
+          <View style={styles.dateModalContainer}>
+            <View style={styles.dateModalHeader}>
+              <Text style={styles.dateModalTitle}>Selecionar Data</Text>
+              <TouchableOpacity
+                onPress={() => setShowDateModal(false)}
+                style={styles.dateModalCloseButton}
+              >
+                <MaterialIcons
+                  name="close"
+                  size={24}
+                  color={colors.textPrimary}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.datePreview}>
+              <Text style={styles.datePreviewText}>{formatDate(tempDate)}</Text>
+            </View>
+
+            <View style={styles.dateQuickOptions}>
+              <Text style={styles.dateOptionsTitle}>Datas rápidas:</Text>
+
+              <TouchableOpacity
+                style={styles.dateOptionButton}
+                onPress={setTempYesterday}
+              >
+                <MaterialIcons
+                  name="history"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={styles.dateOptionText}>Ontem</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.dateOptionButton}
+                onPress={setTempToday}
+              >
+                <MaterialIcons name="today" size={20} color={colors.success} />
+                <Text style={styles.dateOptionText}>Hoje</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.dateNavigation}>
+              <Text style={styles.dateNavigationTitle}>Navegar por dias:</Text>
+              <View style={styles.dateNavigationButtons}>
+                <TouchableOpacity
+                  style={styles.navButton}
+                  onPress={() => changeTempDate(-1)}
+                >
+                  <MaterialIcons
+                    name="chevron-left"
+                    size={24}
+                    color={colors.textPrimary}
+                  />
+                  <Text style={styles.navButtonText}>Dia anterior</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.navButton}
+                  onPress={() => changeTempDate(1)}
+                >
+                  <Text style={styles.navButtonText}>Próximo dia</Text>
+                  <MaterialIcons
+                    name="chevron-right"
+                    size={24}
+                    color={colors.textPrimary}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.dateManual}>
+              <Text style={styles.dateManualTitle}>Seleção manual:</Text>
+              <View style={styles.dateInputRow}>
+                <View style={styles.dateInputGroup}>
+                  <Text style={styles.dateInputLabel}>Dia</Text>
+                  <TextInput
+                    style={styles.dateInput}
+                    keyboardType="numeric"
+                    value={day}
+                    onChangeText={(text) => {
+                      setDay(text);
+                      setTimeout(updateDateFromInputs, 100);
+                    }}
+                    maxLength={2}
+                  />
+                </View>
+
+                <View style={styles.dateInputGroup}>
+                  <Text style={styles.dateInputLabel}>Mês</Text>
+                  <TextInput
+                    style={styles.dateInput}
+                    keyboardType="numeric"
+                    value={month}
+                    onChangeText={(text) => {
+                      setMonth(text);
+                      setTimeout(updateDateFromInputs, 100);
+                    }}
+                    maxLength={2}
+                  />
+                </View>
+
+                <View style={styles.dateInputGroup}>
+                  <Text style={styles.dateInputLabel}>Ano</Text>
+                  <TextInput
+                    style={styles.dateInput}
+                    keyboardType="numeric"
+                    value={year}
+                    onChangeText={(text) => {
+                      setYear(text);
+                      setTimeout(updateDateFromInputs, 100);
+                    }}
+                    maxLength={4}
+                  />
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.dateConfirmButton}
+              onPress={confirmDate}
+            >
+              <Text style={styles.dateConfirmButtonText}>Confirmar Data</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
   };
 
   const CategoryPickerModal = () => (
@@ -211,14 +412,18 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
         <View style={styles.categoryPickerContainer}>
           <View style={styles.categoryPickerHeader}>
             <Text style={styles.categoryPickerTitle}>Selecionar Categoria</Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => setShowCategoryPicker(false)}
               style={styles.categoryPickerCloseButton}
             >
-              <MaterialIcons name="close" size={24} color={colors.textPrimary} />
+              <MaterialIcons
+                name="close"
+                size={24}
+                color={colors.textPrimary}
+              />
             </TouchableOpacity>
           </View>
-          
+
           <FlatList
             data={incomeCategories}
             keyExtractor={(item) => item.id.toString()}
@@ -228,20 +433,26 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
               <TouchableOpacity
                 style={[
                   styles.categoryPickerItem,
-                  selectedCategory?.id === item.id && styles.categoryPickerItemSelected
+                  selectedCategory?.id === item.id &&
+                    styles.categoryPickerItemSelected,
                 ]}
                 onPress={() => handleCategorySelect(item)}
               >
-                <View style={[
-                  styles.categoryIcon,
-                  { backgroundColor: item.color + "20" }
-                ]}>
-                  <Text style={styles.categoryEmoji}>{item.emoji || item.icon}</Text>
+                <View
+                  style={[
+                    styles.categoryIcon,
+                    { backgroundColor: item.color + "20" },
+                  ]}
+                >
+                  <Text style={styles.categoryEmoji}>
+                    {item.emoji || item.icon}
+                  </Text>
                 </View>
-                <Text 
+                <Text
                   style={[
                     styles.categoryPickerItemText,
-                    selectedCategory?.id === item.id && styles.categoryPickerItemTextSelected
+                    selectedCategory?.id === item.id &&
+                      styles.categoryPickerItemTextSelected,
                   ]}
                   numberOfLines={1}
                 >
@@ -273,21 +484,42 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <View style={styles.headerTitleContainer}>
-                <View style={[styles.iconContainer, { backgroundColor: "#22c55e20" }]}>
-                  <MaterialIcons name="attach-money" size={24} color={colors.success} />
+                <View
+                  style={[
+                    styles.iconContainer,
+                    { backgroundColor: "#22c55e20" },
+                  ]}
+                >
+                  <MaterialIcons
+                    name="attach-money"
+                    size={24}
+                    color={colors.success}
+                  />
                 </View>
                 <View>
                   <Text style={styles.modalTitle}>Nova Receita</Text>
-                  <Text style={styles.modalSubtitle}>Adicione uma nova entrada</Text>
+                  <Text style={styles.modalSubtitle}>
+                    Adicione uma nova entrada
+                  </Text>
                 </View>
               </View>
 
-              <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-                <MaterialIcons name="close" size={24} color={colors.textSecondary} />
+              <TouchableOpacity
+                onPress={handleClose}
+                style={styles.closeButton}
+              >
+                <MaterialIcons
+                  name="close"
+                  size={24}
+                  color={colors.textSecondary}
+                />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.modalContent}
+              showsVerticalScrollIndicator={false}
+            >
               <View style={styles.formCard}>
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Valor (R$)</Text>
@@ -312,7 +544,9 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                     placeholder="Ex: Salário, Freelance, Venda..."
                     placeholderTextColor={colors.textSecondary + "80"}
                     value={formData.description}
-                    onChangeText={(text) => handleInputChange("description", text)}
+                    onChangeText={(text) =>
+                      handleInputChange("description", text)
+                    }
                     editable={!loading}
                     multiline
                     maxLength={100}
@@ -326,28 +560,35 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                   <Text style={styles.inputLabel}>Sugestões rápidas</Text>
                   <View style={styles.suggestionsContainer}>
                     {incomeSuggestions.map((suggestion, index) => {
-                      // Verifica se esta sugestão corresponde à categoria selecionada
-                      const isActive = selectedCategory && 
-                        suggestionToCategoryMap[suggestion] === selectedCategory.name &&
+                      const isActive =
+                        selectedCategory &&
+                        suggestionToCategoryMap[suggestion] ===
+                          selectedCategory.name &&
                         formData.description === suggestion;
-                      
+
                       return (
                         <TouchableOpacity
                           key={index}
                           style={[
                             styles.suggestionChip,
-                            isActive && styles.suggestionChipActive
+                            isActive && styles.suggestionChipActive,
                           ]}
                           onPress={() => handleSuggestionSelect(suggestion)}
                         >
-                          <Text style={[
-                            styles.suggestionText,
-                            isActive && styles.suggestionTextActive
-                          ]}>
+                          <Text
+                            style={[
+                              styles.suggestionText,
+                              isActive && styles.suggestionTextActive,
+                            ]}
+                          >
                             {suggestion}
                           </Text>
                           {isActive && (
-                            <MaterialIcons name="check" size={14} color={colors.success} />
+                            <MaterialIcons
+                              name="check"
+                              size={14}
+                              color={colors.success}
+                            />
                           )}
                         </TouchableOpacity>
                       );
@@ -357,7 +598,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.inputLabel}>Categoria *</Text>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.categoryButton}
                     onPress={() => setShowCategoryPicker(true)}
                     disabled={loading}
@@ -365,10 +606,14 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                     <View style={styles.categoryButtonContent}>
                       {selectedCategory ? (
                         <View style={styles.selectedCategoryInfo}>
-                          <View style={[
-                            styles.categoryIconSmall,
-                            { backgroundColor: selectedCategory.color + "20" }
-                          ]}>
+                          <View
+                            style={[
+                              styles.categoryIconSmall,
+                              {
+                                backgroundColor: selectedCategory.color + "20",
+                              },
+                            ]}
+                          >
                             <Text style={styles.categoryEmojiSmall}>
                               {selectedCategory.emoji || selectedCategory.icon}
                             </Text>
@@ -382,7 +627,11 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                           Selecione uma categoria
                         </Text>
                       )}
-                      <MaterialIcons name="arrow-forward-ios" size={16} color={colors.textSecondary} />
+                      <MaterialIcons
+                        name="arrow-forward-ios"
+                        size={16}
+                        color={colors.textSecondary}
+                      />
                     </View>
                   </TouchableOpacity>
                   {!selectedCategory && (
@@ -396,21 +645,27 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                 </View>
 
                 <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Data</Text>
-                  <View style={styles.dateContainer}>
-                    <MaterialIcons name="calendar-today" size={20} color={colors.primary} />
+                  <Text style={styles.inputLabel}>Data *</Text>
+                  <TouchableOpacity
+                    style={styles.dateContainer}
+                    onPress={() => setShowDateModal(true)}
+                    disabled={loading}
+                  >
+                    <MaterialIcons
+                      name="calendar-today"
+                      size={20}
+                      color={colors.primary}
+                    />
                     <Text style={styles.dateText}>
-                      {new Date(formData.date).toLocaleDateString("pt-BR", {
-                        weekday: "long",
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                      })}
+                      {formatDate(formData.date)}
                     </Text>
-                  </View>
-                  <Text style={styles.dateHint}>
-                    Data atual selecionada automaticamente
-                  </Text>
+                    <MaterialIcons
+                      name="edit"
+                      size={18}
+                      color={colors.textSecondary}
+                    />
+                  </TouchableOpacity>
+                  <Text style={styles.dateHint}>Toque para alterar a data</Text>
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -433,7 +688,9 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
 
                 <View style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>Valor:</Text>
-                  <Text style={[styles.receiptValue, { color: colors.success }]}>
+                  <Text
+                    style={[styles.receiptValue, { color: colors.success }]}
+                  >
                     {formData.value ? `R$ ${formData.value}` : "R$ 0,00"}
                   </Text>
                 </View>
@@ -457,7 +714,12 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                       </Text>
                     </View>
                   ) : (
-                    <Text style={[styles.receiptValue, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.receiptValue,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       Não selecionada
                     </Text>
                   )}
@@ -466,14 +728,18 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                 <View style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>Data:</Text>
                   <Text style={styles.receiptValue}>
-                    {new Date(formData.date).toLocaleDateString("pt-BR")}
+                    {formatShortDate(formData.date)}
                   </Text>
                 </View>
 
                 <View style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>Tipo:</Text>
-                  <View style={[styles.typeBadge, { backgroundColor: "#22c55e20" }]}>
-                    <Text style={[styles.typeBadgeText, { color: colors.success }]}>
+                  <View
+                    style={[styles.typeBadge, { backgroundColor: "#22c55e20" }]}
+                  >
+                    <Text
+                      style={[styles.typeBadgeText, { color: colors.success }]}
+                    >
                       RECEITA
                     </Text>
                   </View>
@@ -482,7 +748,12 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                 {formData.notes && (
                   <View style={styles.receiptRow}>
                     <Text style={styles.receiptLabel}>Notas:</Text>
-                    <Text style={[styles.receiptValue, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.receiptValue,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       {formData.notes}
                     </Text>
                   </View>
@@ -492,22 +763,28 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
               <View style={styles.tipContainer}>
                 <MaterialIcons name="lightbulb" size={20} color="#f59e0b" />
                 <Text style={styles.tipText}>
-                  Dica: Tente economizar pelo menos 20% da sua receita para investimentos.
+                  Dica: Tente economizar pelo menos 20% da sua receita para
+                  investimentos.
                 </Text>
               </View>
 
               {!isFormValid() && (
                 <View style={styles.formValidationContainer}>
-                  <MaterialIcons name="info" size={16} color={colors.textSecondary} />
+                  <MaterialIcons
+                    name="info"
+                    size={16}
+                    color={colors.textSecondary}
+                  />
                   <Text style={styles.formValidationText}>
-                    Preencha todos os campos obrigatórios (*) para registrar a receita
+                    Preencha todos os campos obrigatórios (*) para registrar a
+                    receita
                   </Text>
                 </View>
               )}
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={handleClose}
                 disabled={loading}
@@ -515,10 +792,10 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[
                   styles.submitButton,
-                  !isFormValid() && styles.submitButtonDisabled
+                  !isFormValid() && styles.submitButtonDisabled,
                 ]}
                 onPress={handleSubmit}
                 disabled={loading || !isFormValid()}
@@ -528,7 +805,9 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                 ) : (
                   <>
                     <MaterialIcons name="check" size={20} color="#fff" />
-                    <Text style={styles.submitButtonText}>Adicionar Receita</Text>
+                    <Text style={styles.submitButtonText}>
+                      Adicionar Receita
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -536,7 +815,9 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
           </View>
         </LinearGradient>
       </KeyboardAvoidingView>
-      
+
+      {/* MODAIS ANINHADOS - RENDERIZAM DENTRO DO MODAL PRINCIPAL */}
+      <DateSelectorModal />
       <CategoryPickerModal />
     </Modal>
   );
@@ -740,7 +1021,7 @@ const styles = StyleSheet.create({
   dateContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    justifyContent: "space-between",
     padding: 16,
     backgroundColor: "#f8fafc",
     borderRadius: 12,
@@ -751,12 +1032,156 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textPrimary,
     fontWeight: "500",
+    flex: 1,
+    marginLeft: 10,
   },
   dateHint: {
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 6,
     fontStyle: "italic",
+  },
+  // Date Modal Styles
+  dateModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  dateModalContainer: {
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingTop: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 30,
+    maxHeight: "80%",
+  },
+  dateModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingBottom: 16,
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  dateModalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  dateModalCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: colors.border,
+  },
+  datePreview: {
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    alignItems: "center",
+  },
+  datePreviewText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.primary,
+  },
+  dateQuickOptions: {
+    marginBottom: 20,
+  },
+  dateOptionsTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+  dateOptionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: colors.card,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  dateOptionText: {
+    fontSize: 16,
+    color: colors.textPrimary,
+    fontWeight: "500",
+  },
+  dateNavigation: {
+    marginBottom: 20,
+  },
+  dateNavigationTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+  dateNavigationButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  navButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.card,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  navButtonText: {
+    fontSize: 14,
+    color: colors.textPrimary,
+    fontWeight: "500",
+  },
+  dateManual: {
+    marginBottom: 24,
+  },
+  dateManualTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+  dateInputRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  dateInputGroup: {
+    flex: 1,
+  },
+  dateInputLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  dateInput: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: colors.textPrimary,
+    textAlign: "center",
+  },
+  dateConfirmButton: {
+    backgroundColor: colors.primary,
+    padding: 18,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  dateConfirmButtonText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#fff",
   },
   receiptPreview: {
     backgroundColor: colors.card,
