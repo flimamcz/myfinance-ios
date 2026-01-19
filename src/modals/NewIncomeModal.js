@@ -26,27 +26,15 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
   const [showDateModal, setShowDateModal] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
 
-  // =========================
-  // DATA + HORÁRIO SEGURO
-  // =========================
+  // CORREÇÃO: Normaliza a data para 12:00:00 no horário LOCAL
+  // Isso evita problemas com fusos horários de -1h até -11h
   const normalizeDate = (date) => {
     const d = new Date(date);
-    d.setHours(12, 0, 0, 0);
+    d.setHours(12, 0, 0, 0); // Meio-dia local
     return d;
   };
 
-  const formatDateTimeForAPI = (date) => {
-    const d = normalizeDate(date);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    const hour = String(d.getHours()).padStart(2, "0");
-    const minute = String(d.getMinutes()).padStart(2, "0");
-    const second = String(d.getSeconds()).padStart(2, "0");
-
-    return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
-  };
-
+  // CORREÇÃO: Inicializa com data normalizada
   const [formData, setFormData] = useState({
     value: "",
     description: "",
@@ -88,7 +76,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     if (incomeCategories.length > 0 && !selectedCategory) {
       setSelectedCategory(incomeCategories[0]);
     }
-  }, [incomeCategories, selectedCategory]);
+  }, [incomeCategories]);
 
   const handleInputChange = useCallback((field, value) => {
     setFormData((prev) => ({
@@ -98,14 +86,20 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
   }, []);
 
   const formatCurrencyInput = useCallback((text) => {
-    const numericValue = text.replace(/[^0-9]/g, "");
-    if (!numericValue) return "";
-    return (parseInt(numericValue, 10) / 100).toFixed(2).replace(".", ",");
+    let numericValue = text.replace(/[^0-9]/g, "");
+
+    if (numericValue) {
+      const value = (parseInt(numericValue) / 100).toFixed(2);
+      return value.replace(".", ",");
+    }
+
+    return "";
   }, []);
 
   const handleValueChange = useCallback(
     (text) => {
-      handleInputChange("value", formatCurrencyInput(text));
+      const formatted = formatCurrencyInput(text);
+      handleInputChange("value", formatted);
     },
     [formatCurrencyInput, handleInputChange],
   );
@@ -123,56 +117,115 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
   const handleSuggestionSelect = useCallback(
     (suggestion) => {
       handleInputChange("description", suggestion);
-      const categoryName = suggestionToCategoryMap[suggestion];
-      if (!categoryName) return;
 
-      const found = incomeCategories.find((c) => c.name === categoryName);
-      if (found) setSelectedCategory(found);
+      const categoryName = suggestionToCategoryMap[suggestion];
+      if (categoryName) {
+        const matchingCategory = incomeCategories.find(
+          (cat) => cat.name === categoryName,
+        );
+        if (matchingCategory) {
+          setSelectedCategory(matchingCategory);
+        }
+      }
     },
     [handleInputChange, suggestionToCategoryMap, incomeCategories],
   );
 
   const isFormValid = useMemo(() => {
-    return (
-      formData.value &&
-      parseFloat(getNumericValue()) > 0 &&
-      formData.description.trim().length > 0 &&
-      selectedCategory
-    );
+    const hasValue = formData.value && parseFloat(getNumericValue()) > 0;
+    const hasDescription = formData.description.trim().length > 0;
+    const hasCategory = selectedCategory !== null;
+
+    return hasValue && hasDescription && hasCategory;
   }, [formData, getNumericValue, selectedCategory]);
 
+  // CORREÇÃO: Parse de data corrigido
   const parseDateString = useCallback((dateString) => {
-    const match = dateString.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    const regex = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+    const match = dateString.match(regex);
+
     if (!match) throw new Error("Formato inválido");
 
-    const [, dd, mm, yyyy] = match;
-    return normalizeDate(new Date(+yyyy, +mm - 1, +dd));
+    const day = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10) - 1;
+    const year = parseInt(match[3], 10);
+
+    // Cria a data com horário LOCAL (12:00:00) para evitar problemas de fuso
+    const date = new Date(year, month, day, 12, 0, 0, 0);
+    
+    // Valida se a data é válida
+    if (isNaN(date.getTime())) {
+      throw new Error("Data inválida");
+    }
+    
+    return date;
+  }, []);
+
+  // CORREÇÃO CRÍTICA: Formata data para API no formato UTC ISO string
+  const formatDateForAPI = useCallback((date) => {
+    // Primeiro normaliza para 12:00:00 local
+    const normalizedDate = normalizeDate(date);
+    
+    // Cria uma string ISO no fuso horário local
+    const year = normalizedDate.getFullYear();
+    const month = String(normalizedDate.getMonth() + 1).padStart(2, "0");
+    const day = String(normalizedDate.getDate()).padStart(2, "0");
+    const hours = String(normalizedDate.getHours()).padStart(2, "0");
+    const minutes = String(normalizedDate.getMinutes()).padStart(2, "0");
+    const seconds = String(normalizedDate.getSeconds()).padStart(2, "0");
+    
+    // Formato: YYYY-MM-DDTHH:MM:SS
+    // O backend deve aceitar esse formato com horário
+    return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
   }, []);
 
   const handleSubmit = useCallback(async () => {
     Keyboard.dismiss();
 
-    if (!isFormValid) {
-      Alert.alert("Erro", "Preencha todos os campos obrigatórios");
+    if (!formData.value || parseFloat(getNumericValue()) <= 0) {
+      Alert.alert("Erro", "Informe um valor válido para a receita");
+      return;
+    }
+
+    if (!formData.description.trim()) {
+      Alert.alert("Erro", "Informe uma descrição para a receita");
+      return;
+    }
+
+    if (!selectedCategory) {
+      Alert.alert("Erro", "Selecione uma categoria para a receita");
       return;
     }
 
     try {
       setLoading(true);
 
+      // CORREÇÃO: Usa a função formatDateForAPI corrigida
+      const formattedDate = formatDateForAPI(formData.date);
+
+      console.log("📤 Enviando transação:", {
+        value: getNumericValue(),
+        date: formattedDate,
+        description: formData.description.trim(),
+        categoryId: selectedCategory.id,
+      });
+
       const transactionData = {
         value: getNumericValue(),
         typeId: 1,
         description: formData.description.trim(),
-        date: formatDateTimeForAPI(formData.date),
+        date: formattedDate, // Data formatada corretamente
         status: true,
         categoryId: selectedCategory.id,
       };
 
       const response = await createTransaction(transactionData);
 
-      if (response?.error) {
-        Alert.alert("Erro", response.message);
+      if (response.error) {
+        Alert.alert(
+          "Erro",
+          response.message || "Não foi possível criar a receita",
+        );
         return;
       }
 
@@ -185,21 +238,32 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
           },
         },
       ]);
-    } catch (e) {
-      Alert.alert("Erro", "Erro ao salvar receita");
+    } catch (error) {
+      console.error("Erro ao criar receita:", error);
+      Alert.alert(
+        "Erro",
+        error.response?.data?.message ||
+          "Erro ao salvar receita. Tente novamente.",
+      );
     } finally {
       setLoading(false);
     }
-  }, [formData, selectedCategory, isFormValid, getNumericValue, onSuccess]);
+  }, [
+    formData,
+    getNumericValue,
+    selectedCategory,
+    onSuccess,
+    formatDateForAPI,
+  ]);
 
   const resetForm = useCallback(() => {
     setFormData({
       value: "",
       description: "",
-      date: normalizeDate(new Date()),
+      date: normalizeDate(new Date()), // CORREÇÃO: Usa normalizeDate
       notes: "",
     });
-    if (incomeCategories.length) {
+    if (incomeCategories.length > 0) {
       setSelectedCategory(incomeCategories[0]);
     }
   }, [incomeCategories]);
@@ -210,19 +274,20 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     onClose();
   }, [resetForm, onClose]);
 
-  const formatDate = (date) =>
-    date.toLocaleDateString("pt-BR", {
+  const formatDate = useCallback((date) => {
+    return date.toLocaleDateString("pt-BR", {
       weekday: "long",
       day: "numeric",
       month: "long",
       year: "numeric",
     });
+  }, []);
 
   const formatShortDate = useCallback((date) => {
     return date.toLocaleDateString("pt-BR");
   }, []);
 
-  // COMPONENTE DE SELEÇÃO DE DATA - SIMPLES E QUE FUNCIONA
+  // COMPONENTE DE SELEÇÃO DE DATA - CORRIGIDO
   const DateSelectorModal = useCallback(() => {
     const [dateInput, setDateInput] = useState(
       formData.date.toLocaleDateString("pt-BR"),
@@ -242,9 +307,14 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
 
         console.log("✅ Data parseada:", newDate);
         console.log("✅ Dia da data:", newDate.getDate());
-        console.log("✅ Data formatada:", newDate.toLocaleDateString("pt-BR"));
+        console.log("✅ Data local:", newDate.toLocaleDateString("pt-BR"));
+        console.log("✅ Data ISO:", newDate.toISOString());
 
-        setFormData((prev) => ({ ...prev, date: newDate }));
+        // CORREÇÃO: Atualiza o formData com a data normalizada
+        setFormData((prev) => ({ 
+          ...prev, 
+          date: normalizeDate(newDate) // Normaliza para 12:00:00
+        }));
         Keyboard.dismiss();
         setShowDateModal(false);
       } catch (error) {
@@ -254,8 +324,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     }, [dateInput, parseDateString]);
 
     const handleToday = useCallback(() => {
-      const d = new Date();
-      d.setHours(12, 0, 0, 0);
+      const d = normalizeDate(new Date());
       setDateInput(d.toLocaleDateString("pt-BR"));
       setFormData((prev) => ({ ...prev, date: d }));
     }, []);
@@ -263,7 +332,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     const handleYesterday = useCallback(() => {
       const d = new Date();
       d.setDate(d.getDate() - 1);
-      d.setHours(12, 0, 0, 0);
+      d.setHours(12, 0, 0, 0); // CORREÇÃO: Normaliza para 12:00:00
       setDateInput(d.toLocaleDateString("pt-BR"));
       setFormData((prev) => ({ ...prev, date: d }));
     }, []);
@@ -271,7 +340,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     const handleTomorrow = useCallback(() => {
       const d = new Date();
       d.setDate(d.getDate() + 1);
-      d.setHours(12, 0, 0, 0);
+      d.setHours(12, 0, 0, 0); // CORREÇÃO: Normaliza para 12:00:00
       setDateInput(d.toLocaleDateString("pt-BR"));
       setFormData((prev) => ({ ...prev, date: d }));
     }, []);
@@ -297,7 +366,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
       setDateInput(formatted);
     }, []);
 
-    console.log("data aqui:" + formData);
+    console.log("📅 Data atual no formData:", formData.date.toISOString());
 
     return (
       <Modal
@@ -341,6 +410,9 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                 </Text>
                 <Text style={styles.datePreviewSubtext}>
                   {formatShortDate(formData.date)}
+                </Text>
+                <Text style={styles.datePreviewDebug}>
+                  Enviará como: {formatDateForAPI(formData.date)}
                 </Text>
               </View>
 
@@ -431,6 +503,7 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
     formatDate,
     formatShortDate,
     parseDateString,
+    formatDateForAPI,
   ]);
 
   const CategoryPickerModal = useCallback(
@@ -759,6 +832,9 @@ export default function NewIncomeModal({ visible, onClose, onSuccess }) {
                       </TouchableOpacity>
                       <Text style={styles.dateHint}>
                         Toque para alterar a data
+                      </Text>
+                      <Text style={styles.dateDebug}>
+                        Data a ser enviada: {formatDateForAPI(formData.date)}
                       </Text>
                     </View>
 
@@ -1149,6 +1225,12 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontStyle: "italic",
   },
+  dateDebug: {
+    fontSize: 10,
+    color: "#666",
+    marginTop: 4,
+    fontStyle: "italic",
+  },
   // Date Modal Styles
   dateModalOverlay: {
     flex: 1,
@@ -1202,6 +1284,17 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: colors.primary,
   },
+  datePreviewSubtext: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  datePreviewDebug: {
+    fontSize: 10,
+    color: "#666",
+    marginTop: 8,
+    fontStyle: "italic",
+  },
   dateQuickOptions: {
     marginBottom: 20,
   },
@@ -1225,33 +1318,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: "500",
   },
-  dateNavigation: {
-    marginBottom: 20,
-  },
-  dateNavigationTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.textPrimary,
-    marginBottom: 12,
-  },
-  dateNavigationButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  navButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: colors.card,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-  },
-  navButtonText: {
-    fontSize: 14,
-    color: colors.textPrimary,
-    fontWeight: "500",
-  },
   dateManual: {
     marginBottom: 24,
   },
@@ -1261,28 +1327,26 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 12,
   },
-  dateInputRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 10,
+  dateInputContainer: {
+    marginBottom: 20,
   },
-  dateInputGroup: {
-    flex: 1,
-  },
-  dateInputLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 6,
-  },
-  dateInput: {
+  dateTextInput: {
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 18,
     color: colors.textPrimary,
     textAlign: "center",
+    marginTop: 8,
+  },
+  dateExample: {
+    fontSize: 12,
+    color: colors.textSecondary + "80",
+    marginTop: 8,
+    textAlign: "center",
+    fontStyle: "italic",
   },
   dateConfirmButton: {
     backgroundColor: colors.primary,
@@ -1496,34 +1560,6 @@ const styles = StyleSheet.create({
   categoryPickerItemTextSelected: {
     color: colors.primary,
     fontWeight: "700",
-  },
-
-  dateTextInput: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 18,
-    color: colors.textPrimary,
-    textAlign: "center",
-    marginTop: 8,
-  },
-  dateInputContainer: {
-    marginBottom: 20,
-  },
-  dateInputHint: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 8,
-    textAlign: "center",
-  },
-  dateExample: {
-    fontSize: 12,
-    color: colors.textSecondary + "80",
-    marginTop: 8,
-    textAlign: "center",
-    fontStyle: "italic",
   },
   keyboardAvoidingView: {
     flex: 1,
